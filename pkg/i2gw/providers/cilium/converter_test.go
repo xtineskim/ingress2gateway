@@ -24,87 +24,62 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/ptr"
 	gatewayv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 )
 
 func Test_ToGateway(t *testing.T) {
-	iPrefix := networkingv1.PathTypePrefix
-	// gPathPrefix := gatewayv1beta1.PathMatchPathPrefix
-	// isPathType := networkingv1.PathTypeImplementationSpecific
+	// iPrefix := networkingv1.PathTypePrefix
+	gPathPrefix := gatewayv1beta1.PathMatchPathPrefix
+	isPathType := networkingv1.PathTypeImplementationSpecific
 
 	testCases := []struct {
 		name                     string
-		ingresses                []networkingv1.Ingress
+		ingresses                map[types.NamespacedName]*networkingv1.Ingress
 		expectedGatewayResources i2gw.GatewayResources
 		expectedErrors           field.ErrorList
-	}{
-		{
-			name: "test",
-			ingresses: []networkingv1.Ingress{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "cilium-ingress-basic",
-						Namespace: "default",
-					},
-					Spec: networkingv1.IngressSpec{
-						IngressClassName: ptrTo("ingress-cilium"),
-						Rules: []networkingv1.IngressRule{{
-							Host: "test.mydomain.com",
-							IngressRuleValue: networkingv1.IngressRuleValue{
-								HTTP: &networkingv1.HTTPIngressRuleValue{
-									Paths: []networkingv1.HTTPIngressPath{{
-										Path:     "/",
-										PathType: &iPrefix,
-										Backend: networkingv1.IngressBackend{
-											Service: &networkingv1.IngressServiceBackend{
-												Name: "test",
-												Port: networkingv1.ServiceBackendPort{
-													Number: 80,
-												},
+	}{{
+		name: "ImplementationSpecific HTTPRouteMatching",
+		ingresses: map[types.NamespacedName]*networkingv1.Ingress{
+			{Namespace: "default", Name: "implementation-specific-regex"}: {
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "implementation-specific-regex",
+					Namespace: "default",
+				},
+				Spec: networkingv1.IngressSpec{
+					IngressClassName: ptrTo("ingress-nginx"),
+					Rules: []networkingv1.IngressRule{{
+						Host: "test.mydomain.com",
+						IngressRuleValue: networkingv1.IngressRuleValue{
+							HTTP: &networkingv1.HTTPIngressRuleValue{
+								Paths: []networkingv1.HTTPIngressPath{{
+									Path:     "/~/echo/**/test",
+									PathType: &isPathType,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "test",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 80,
 											},
 										},
-									}},
-								},
-							},
-						}},
-					},
-				},
-			},
-			expectedGatewayResources: i2gw.GatewayResources{
-				Gateways: map[types.NamespacedName]gatewayv1beta1.Gateway{
-					{
-						Namespace: "default",
-						Name:      "cilium-ingress",
-					}: {
-						ObjectMeta: metav1.ObjectMeta{Name: "cilium-ingress", Namespace: "default"},
-						Spec: gatewayv1beta1.GatewaySpec{
-							GatewayClassName: "cilium",
-							Listeners: []gatewayv1beta1.Listener{{
-								Name:     "test-mydomain-com-http",
-								Port:     80,
-								Protocol: gatewayv1beta1.HTTPProtocolType,
-								Hostname: ptrTo(gatewayv1beta1.Hostname("test.mydomain.com")),
-							}},
-						},
-					},
-				},
-				HTTPRoutes: map[types.NamespacedName]gatewayv1beta1.HTTPRoute{
-					{Namespace: "default", Name: "cilium-ingress-basic"}: {
-						ObjectMeta: metav1.ObjectMeta{Name: "cilium-ingress-basic", Namespace: "default"},
-						Spec: gatewayv1beta1.HTTPRouteSpec{
-							CommonRouteSpec: gatewayv1beta1.CommonRouteSpec{
-								ParentRefs: []gatewayv1beta1.ParentReference{{
-									Name: "cilium",
+									},
 								}},
 							},
-							Hostnames: []gatewayv1beta1.Hostname{"test.mydomain.com"},
 						},
-					},
+					}},
 				},
 			},
-			expectedErrors: field.ErrorList{},
 		},
-	}
+		expectedGatewayResources: i2gw.GatewayResources{},
+		expectedErrors: field.ErrorList{
+			{
+				Type:     field.ErrorTypeInvalid,
+				Field:    "spec.rules[0].http.paths[0].pathType",
+				BadValue: ptr.To("ImplementationSpecific"),
+				Detail:   "implementationSpecific path type is not supported in generic translation, and your provider does not provide custom support to translate it",
+			},
+		}}}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			provider := NewProvider(&i2gw.ProviderConf{})
@@ -122,8 +97,8 @@ func Test_ToGateway(t *testing.T) {
 			}
 
 		})
-	}
 
+	}
 }
 
 func ptrTo[T any](a T) *T {

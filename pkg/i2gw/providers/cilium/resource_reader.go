@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/kubernetes-sigs/ingress2gateway/pkg/i2gw"
+	"github.com/kubernetes-sigs/ingress2gateway/pkg/i2gw/providers/common"
 )
 
 // converter implements the i2gw.CustomResourceReader interface.
@@ -33,12 +34,24 @@ func newResourceReader(conf *i2gw.ProviderConf) *resourceReader {
 		conf: conf,
 	}
 }
-func (r *resourceReader) ReadResourcesFromCluster(ctx context.Context, customResources interface{}) error {
-	// cilium does not have any CRDs.
-	return nil
+func (r *resourceReader) readResourcesFromCluster(ctx context.Context) (*storage, error) {
+	storage := newResourcesStorage()
+
+	ingresses, err := common.ReadIngressesFromCluster(ctx, r.conf.Client, CiliumIngressClass)
+	if err != nil {
+		return nil, err
+	}
+	storage.Ingresses = ingresses
+	return storage, nil
 }
 
-func (r *resourceReader) ReadResourcesFromFiles(ctx context.Context, customResources interface{}, filename string) error {
-	// cilium does not have any CRDs.
-	return nil
+func (r *resourceReader) readResourcesFromFile(_ context.Context, filename string) (*storage, error) {
+	storage := newResourcesStorage()
+
+	ingresses, err := common.ReadIngressesFromFile(filename, r.conf.Namespace, CiliumIngressClass)
+	if err != nil {
+		return nil, err
+	}
+	storage.Ingresses = ingresses
+	return storage, nil
 }
